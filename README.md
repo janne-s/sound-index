@@ -11,6 +11,8 @@ Writes the database in the user's home folder.
 
 ## Getting Started
 
+![File Processing](./Sound-Index_01_process_files.png)
+
 ### Processing Projects
 - **Drag & Drop**: Simply drag project files or folders onto the "Process Files" tab
 - **Supported Formats**: `.als` (Ableton Live)
@@ -30,6 +32,8 @@ Enable filtering to exclude specific folders from processing:
 - The app will skip projects in folders and sample paths containing these terms
 
 ## Database Management
+
+![Database View](./Sound-Index_02_manage_database.png) 
 
 ### Viewing Results
 Switch to the "View Database" tab to:
