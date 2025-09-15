@@ -5,7 +5,7 @@ A macOS desktop tool that scans daw projects, extracts sample references, and bu
 OS X
 Works with Python 3.7+
 
-pip install PyQt5
+**pip install PyQt5**
 
 ## Getting Started
 
