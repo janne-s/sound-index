@@ -2,7 +2,9 @@
 A macOS desktop tool that scans daw projects, extracts sample references, and builds a searchable SQLite database with Finder comment tagging. The app doesn't touch or change the original files.
 
 # Requirements
-Python 3.13, OS X
+OS X
+Works with Python 3.7+
+pip install PyQt5
 
 ## Getting Started
 
