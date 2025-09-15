@@ -5,7 +5,7 @@ A macOS desktop tool that scans daw projects, extracts sample references, and bu
 OS X
 Python 3.6+
 
-**pip install PyQt5**
+**pip install PyQt5**  
 **python soundindex.py**
 
 Writes the database in the user's home folder.
