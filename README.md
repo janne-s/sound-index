@@ -39,7 +39,7 @@ Switch to the "View Database" tab to:
 
 ### Data Operations
 - **Export**: Save database contents as CSV file
-- **Delete**: Remove selected entries (select rows + Delete key or button)
+- **Delete**: Remove selected entries (select rows + Backspace key or button)
 - **Selection**: Use CMD+A to select all currently listed entries
 
 ## Finder Comments (macOS Only)
