@@ -1,5 +1,5 @@
 # Sound Index
-A macOS desktop tool that scans daw projects, extracts sample references, and builds a searchable SQLite database with Finder comment tagging.
+A macOS desktop tool that scans daw projects, extracts sample references, and builds a searchable SQLite database with Finder comment tagging. The app doesn't touch or change the original files.
 
 # Requirements
 Python 3.13, OS X
