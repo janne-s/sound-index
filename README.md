@@ -7,6 +7,8 @@ Python 3.6+
 
 **pip install PyQt5**
 
+Writes the database in the user's home folder.
+
 ## Getting Started
 
 ### Processing Projects
