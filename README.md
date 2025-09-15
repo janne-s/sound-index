@@ -6,6 +6,7 @@ OS X
 Python 3.6+
 
 **pip install PyQt5**
+**python soundindex.py**
 
 Writes the database in the user's home folder.
 
