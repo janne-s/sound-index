@@ -1,7 +1,9 @@
 # Sound Index
-A macOS desktop tool that scans daw projects, extracts sample references, and builds a searchable SQLite database with Finder comment tagging. The app doesn't touch or change the original files.
+A macOS desktop tool that scans DAW projects, extracts sample references, and builds a searchable SQLite database with Finder comment tagging. The app doesn't touch or change the original files.
 
 This grew out of my need to quickly understand my sample collection. I often used a sound in a project and later forgot about it. Having project usage info directly in Finder is practical. Currently supports both older and latest Ableton project file formats.
+
+The code has been created by using ChatGPT and Claude.
 
 # Requirements
 OS X  
