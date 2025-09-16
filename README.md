@@ -12,7 +12,7 @@ Python 3.6+
 **pip install PyQt5**  
 Launch: **python soundindex.py**
 
-Writes the database in the user's home folder.
+Writes a single database file in the user's home folder.
 
 ## Getting Started
 
