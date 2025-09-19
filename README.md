@@ -20,7 +20,7 @@ Writes a single database file in the user's home folder.
 
 ### Processing Projects
 - **Drag & Drop**: Simply drag project files or folders onto the "Process Files" tab
-- **Supported Formats**: `.als` (Ableton Live), `.logic` (Logic 8/9), `.logicx` (Logic 10/11)
+- **Supported Formats**: `.als` (Ableton Live), `.logic` (Logic Pro 8/9), `.logicx` (Logic Pro 10/11)
   - NOTE: Sounds found from logicx bundle can sometimes be inside the bundle. Right click and Show Package Contents will reveal them.
 - **Batch Processing**: The app automatically queues multiple files for processing
 
