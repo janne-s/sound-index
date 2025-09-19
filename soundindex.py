@@ -31,7 +31,7 @@ from PyQt5.QtGui import QColor
 
 # Constants
 AUDIO_EXTENSIONS = (".aif", ".aiff", ".wav", ".caf", ".mp3", ".flac", ".ogg")
-PROJECT_EXTENSIONS = (".als", ".logicx")
+PROJECT_EXTENSIONS = (".als", ".logicx", ".logic")
 DEFAULT_DB_NAME = "project_samples.db"
 SEARCH_DEBOUNCE_MS = 450
 PROGRESS_UPDATE_INTERVAL = 10
@@ -178,28 +178,6 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute('SELECT project_file, project_type FROM projects')
             return cursor.fetchall()
-
-
-    def _ensure_sample_row(self, file_path, file_exists=0, comment_updated=0):
-        with self.lock:
-            cursor = self.conn.cursor()
-            cursor.execute('SELECT id FROM samples WHERE file_path = ?', (file_path,))
-            r = cursor.fetchone()
-            if r:
-                sample_id = r[0]
-                cursor.execute('''
-                    UPDATE samples
-                    SET file_exists=?, comment_updated=?, last_checked=?
-                    WHERE id=?
-                ''', (int(bool(file_exists)), int(bool(comment_updated)), datetime.now().isoformat(), sample_id))
-            else:
-                cursor.execute('''
-                    INSERT INTO samples (file_path, file_exists, comment_updated, last_checked)
-                    VALUES (?, ?, ?, ?)
-                ''', (file_path, int(bool(file_exists)), int(bool(comment_updated)), datetime.now().isoformat()))
-                sample_id = cursor.lastrowid
-            self.conn.commit()
-            return sample_id
 
     def add_sample(self, file_path, project_file, file_exists, comment_updated, project_type):
         """Add sample and associate it with a project file/type."""
@@ -617,10 +595,11 @@ def register_project_parser(project_type):
     return decorator
 
 def detect_project_type(path: str) -> str:
-    path = path.lower()
-    if path.endswith(".als"):
+    # Strip trailing slashes for directory bundles
+    clean_path = path.rstrip('/').lower()
+    if clean_path.endswith(".als"):
         return "ALS"
-    if path.endswith(".logicx"):
+    if clean_path.endswith((".logic", ".logicx")):
         return "LOGIC"
     return "UNKNOWN"
 
@@ -788,63 +767,148 @@ def parse_als(als_file_path: str):
     return sorted(sample_entries)
 
 # ---------------------------
-# LOGIC parser (stub + reasonable extraction)
+# LOGIC parser
 # ---------------------------
 
 @register_project_parser("LOGIC")
 def parse_logicx(logicx_path: str):
     """
-    Extract sample references from Logic Pro .logicx project bundle.
-    Strategy:
-    - Treat .logicx as folder (bundle); scan 'Audio Files', 'Samples', 'Imported' for audio files.
-    - Attempt to parse ProjectData plist for references (if present).
-    Returns list of sample paths (strings). External references remain as-is.
+    Extract sample references from Logic Pro .logic/.logicx project.
+    Handles both legacy .logic (documentData) and modern .logicx (MetaData.plist) formats.
+    Returns list of sample paths (strings).
     """
+    import plistlib
+    import re
+    
+    # Strip trailing slashes that can come from drag/drop of directories
+    clean_path = logicx_path.rstrip('/')
+    
+    AUDIO_EXTS = (".aif", ".aiff", ".wav", ".caf", ".mp3", ".flac", ".m4a")
+    AUDIO_KEYS = [
+        "AudioFiles",
+        "SamplerInstrumentsFiles", 
+        "ImpulsResponsesFiles",
+        "UnusedAudioFiles",
+        "PlaybackFiles",
+        "QuicksamplerFiles",
+        "UltrabeatFiles",
+    ]
+    
+    def find_document_data(project_path):
+        """Return path to documentData inside a .logic project."""
+        for root, _, files in os.walk(project_path):
+            for f in files:
+                if f == "documentData":
+                    return os.path.join(root, f)
+        raise FileNotFoundError("documentData not found in project")
+
+    def extract_audio_from_document_data(document_data_path):
+        """Scan binary documentData for ASCII strings with audio file references."""
+        try:
+            with open(document_data_path, "rb") as f:
+                data = f.read()
+        except Exception:
+            return []
+
+        strings_found = re.findall(rb"[ -~]{4,}", data)
+        audio_files = []
+        folders = []
+        prev = None
+
+        for s in strings_found:
+            decoded = s.decode(errors="ignore")
+            if prev and prev.lower().endswith(AUDIO_EXTS) and decoded.startswith("/"):
+                folders.append(decoded)
+                audio_files.append(os.path.join(decoded, prev))
+            prev = decoded
+
+        return audio_files
+
+    def find_metadata_plist(project_path):
+        """Return path to MetaData.plist inside a .logicx project."""
+        for root, _, files in os.walk(project_path):
+            for f in files:
+                if f == "MetaData.plist":
+                    return os.path.join(root, f)
+        raise FileNotFoundError("MetaData.plist not found in project")
+
+    def extract_audio_from_metadata(plist_path, project_root):
+        """Extract audio file references from MetaData.plist."""
+        try:
+            with open(plist_path, "rb") as f:
+                plist_data = plistlib.load(f)
+        except Exception:
+            return []
+
+        audio_files = []
+
+        for key in AUDIO_KEYS:
+            if key not in plist_data:
+                continue
+            file_list = plist_data[key]
+            if not isinstance(file_list, list):
+                continue
+                
+            for entry in file_list:
+                if not isinstance(entry, str):
+                    continue
+                    
+                if entry.startswith("/"):  # absolute path
+                    audio_files.append(entry)
+                else:  # relative path - check both bundled and external locations
+                    # Option 1: Bundled inside .logicx/Media/
+                    bundled_path = os.path.join(project_root, "Media", entry)
+                    
+                    # Option 2: External Audio Files folder (sibling to .logicx)
+                    project_parent = os.path.dirname(project_root)
+                    external_path = os.path.join(project_parent, entry)
+                    
+                    # Use whichever path actually exists, prefer bundled
+                    if os.path.exists(bundled_path):
+                        audio_files.append(os.path.normpath(bundled_path))
+                    elif os.path.exists(external_path):
+                        audio_files.append(os.path.normpath(external_path))
+                    else:
+                        # Neither exists, but include the bundled path as default
+                        # (might be a missing file that user wants to track)
+                        audio_files.append(os.path.normpath(bundled_path))
+
+        return audio_files
+
+    # Main parsing logic
     entries = set()
     p = Path(logicx_path)
     if not p.exists():
         return []
 
-    # If it's a package, iterate known audio dirs
-    audio_dirs = ["Audio Files", "Samples", "Imported", "Audio"]
-    for ad in audio_dirs:
-        d = p / ad
-        if d.exists() and d.is_dir():
-            for f in d.rglob("*"):
+    try:
+        # Use clean_path (without trailing slash) for extension checking
+        if clean_path.lower().endswith(".logic"):
+            # Legacy .logic format
+            doc_path = find_document_data(logicx_path)
+            results = extract_audio_from_document_data(doc_path)
+            entries.update(results)
+        elif clean_path.lower().endswith(".logicx"):
+            # Modern .logicx format
+            plist_path = find_metadata_plist(logicx_path)
+            # Pass the project root (logicx_path) as the base directory
+            results = extract_audio_from_metadata(plist_path, logicx_path)
+            entries.update(results)
+        else:
+            # Fallback: treat as bundle and scan for audio files
+            audio_dirs = ["Audio Files", "Samples", "Imported", "Audio"]
+            for ad in audio_dirs:
+                d = p / ad
+                if d.exists() and d.is_dir():
+                    for f in d.rglob("*"):
+                        if f.suffix.lower() in AUDIO_EXTENSIONS:
+                            entries.add(str(f.resolve()))
+    except FileNotFoundError:
+        # If structured parsing fails, fallback to scanning the bundle
+        if p.is_dir():
+            for f in p.rglob("*"):
                 if f.suffix.lower() in AUDIO_EXTENSIONS:
                     entries.add(str(f.resolve()))
-
-    # Attempt to parse ProjectData (plist) for external references
-    project_data = p / "ProjectData"
-    if project_data.exists():
-        try:
-            with project_data.open("rb") as fp:
-                try:
-                    plist = plistlib.load(fp)
-                except Exception:
-                    plist = None
-                if plist:
-                    # Heuristic: search for common keys or nested dicts that contain 'FilePath' or 'URL' or 'Path'
-                    def walk(obj):
-                        if isinstance(obj, dict):
-                            for k, v in obj.items():
-                                if isinstance(k, str) and any(sub in k.lower() for sub in ("path", "file", "url")):
-                                    if isinstance(v, str):
-                                        entries.add(v)
-                                walk(v)
-                        elif isinstance(obj, (list, tuple)):
-                            for item in obj:
-                                walk(item)
-                    walk(plist)
-        except Exception:
-            # ignore parse errors - parser is a stub/hardening placeholder
-            pass
-
-    # If still empty, we can look for a flattened "Audio Files" folder anywhere in the bundle
-    if not entries:
-        for f in p.rglob("*"):
-            if f.suffix.lower() in (".aif", ".aiff", ".wav", ".caf", ".mp3", ".flac", ".ogg"):
-                entries.add(str(f.resolve()))
 
     return sorted(entries)
 
@@ -1347,10 +1411,8 @@ class MainWindow(QWidget):
         self.setAcceptDrops(True)
 
         self.db_manager = DatabaseManager()
-        self.processing_thread = None
         self.queue = []
         self.current_processing = None
-        self.cancel_button = None  # Add this line
 
         self.init_ui()
 
@@ -1505,9 +1567,20 @@ class MainWindow(QWidget):
                     for d in dirs_to_remove:
                         if d in dirs:
                             dirs.remove(d)
+                
+                # Check for project bundles (directories with project extensions)
+                for d in list(dirs):
+                    if d.lower().endswith(PROJECT_EXTENSIONS):
+                        project_path = os.path.join(root, d)
+                        project_files.append(project_path)
+                        # Don't recurse into project bundles
+                        dirs.remove(d)
+                
+                # Check for individual project files (like .als files)
                 for fn in files:
                     if fn.lower().endswith(PROJECT_EXTENSIONS):
                         project_files.append(os.path.join(root, fn))
+                        
         except Exception as e:
             self.progress_text.append(f"Error scanning folder {folder_path}: {e}")
         return project_files
@@ -1530,7 +1603,22 @@ class MainWindow(QWidget):
         skipped_folders = []
         for url in urls:
             path = url.toLocalFile()
-            if os.path.isdir(path):
+            
+            # Check if this is a project file (either regular file or bundle directory)
+            # Strip trailing slash for directory bundles
+            clean_path = path.rstrip('/')
+            is_project_file = clean_path.lower().endswith(PROJECT_EXTENSIONS)
+            
+            if is_project_file:
+                # This is a project file (could be file or bundle directory)
+                if os.path.isdir(path) and self.should_skip_folder(path):
+                    skipped_folders.append(Path(path).name)
+                    continue
+                self.queue.append((path, True))
+                file_type = "project bundle" if os.path.isdir(path) else "project"
+                self.progress_text.append(f"Queued {file_type}: {Path(path).name}")
+            elif os.path.isdir(path):
+                # This is a regular folder - scan for project files inside
                 if self.should_skip_folder(path):
                     skipped_folders.append(Path(path).name)
                     continue
@@ -1538,10 +1626,6 @@ class MainWindow(QWidget):
                 # convert to (path, True) to force processing (same as before)
                 self.queue.extend([(fp, True) for fp in found])
                 self.progress_text.append(f"Queued {len(found)} project files from {Path(path).name}")
-            elif os.path.isfile(path) and path.lower().endswith(PROJECT_EXTENSIONS):
-                self.queue.append((path, True))
-                self.progress_text.append(f"Queued project: {Path(path).name}")
-
 
         if skipped_folders:
             self.progress_text.append(f"Skipped {len(skipped_folders)} folders: {', '.join(skipped_folders)}")
@@ -1686,13 +1770,6 @@ class MainWindow(QWidget):
         self.progress_text.append(msg)
         sb = self.progress_text.verticalScrollBar()
         sb.setValue(sb.maximum())
-
-    def processing_finished(self, message, total_files, updated_files):
-        self.progress_text.append("Completed.\n")
-        QMessageBox.information(self, "Success", f"{message}\n\nData stored in database.")
-        if hasattr(self, 'db_viewer'):
-            self.db_viewer.refresh_data()
-        self.reset_ui()
 
     def reset_ui(self):
         self.drop_label.setText("Drag & drop a project file or folder here")
