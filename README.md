@@ -7,7 +7,7 @@ The code has been created with ChatGPT and Claude.
 
 # Requirements
 OS X  
-Python 3.6+
+Python 3.8+
 
 **pip install PyQt5**  
 Launch: **python soundindex.py**
